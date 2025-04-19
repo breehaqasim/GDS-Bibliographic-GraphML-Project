@@ -39,3 +39,64 @@ GDS-Bibliographic-GraphML-Project/
 ├── requirements.txt        # Python dependencies
 ├── README.md               # Project overview and setup (this file)
 └── .gitignore              # Ignored files for Git
+```
+## 🧠 Tasks Overview
+
+### 🔸 Node Classification
+
+Predict the topic or research area of a **Paper** or **Author** using graph structure and related attributes. Example tasks include:
+- Classifying papers into topics based on citation networks.
+- Predicting an author's expertise based on their co-authorship network.
+
+### 🔸 Link Prediction
+
+Predict future **collaborations** or **citation links** between entities using supervised or unsupervised link prediction models. Example use cases:
+- Forecasting future co-authorship.
+- Suggesting relevant citations for a given paper.
+- Recommending suitable journals for paper submission.
+
+---
+
+## 📊 Evaluation Metrics
+
+### Node Classification:
+- **Accuracy**
+- **Precision**
+- **Recall**
+- **F1-Score**
+
+### Link Prediction:
+- **AUC-ROC**
+- **Precision@K**
+- **Recall@K**
+
+---
+
+## 📘 Dataset Information
+
+The dataset consists of the following CSV files:
+
+- `authors.csv`: Author ID, Name, URL
+- `journal.csv`: Journal Name, Publisher
+- `paper.csv`: Paper ID, DOI, Title, Year, URL, Citation Count, Field of Study, Volume, Date
+- `topic.csv`: Topic ID, Name, URL
+- `paper_journal.csv`: Paper ID, Journal Name, Publisher
+- `paper_topic.csv`: Paper ID, Topic ID
+- `paper_reference.csv`: Paper ID, Referenced Paper ID
+
+This dataset is derived from bibliographic research and is cited as follows:
+
+BibTeX:
+```bibtex
+@article{10.1162/qss_a_00163,
+  author = {Rothenberger, Liane and Pasta, Muhammad Qasim and Mayerhoffer, Daniel},
+  title = {Mapping and impact assessment of phenomenon-oriented research fields: The example of migration research},
+  journal = {Quantitative Science Studies},
+  volume = {2},
+  number = {4},
+  pages = {1466-1485},
+  year = {2021},
+  doi = {10.1162/qss_a_00163}
+}
+
+
