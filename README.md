@@ -7,7 +7,7 @@ This project explores the application of **graph-based machine learning** techni
 ## 🚀 Project Overview
 
 - **Domain**: Bibliographic Data Analysis
-- **Frameworks Used**: Neo4j, NetworkX, Scikit-learn, PyTorch Geometric (optional)
+- **Frameworks Used**: Neo4j, NetworkX
 - **Languages**: Python, Cypher
 - **Tasks**:
   - Node Classification: Classify papers/authors using graph structure
