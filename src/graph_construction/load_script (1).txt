@@ -1,0 +1,87 @@
+CREATE CONSTRAINT author_id   IF NOT EXISTS FOR (a:Author)  REQUIRE a.author_id IS UNIQUE;
+CREATE CONSTRAINT paper_id    IF NOT EXISTS FOR (p:Paper)   REQUIRE p.paper_id  IS UNIQUE;
+CREATE CONSTRAINT topic_id    IF NOT EXISTS FOR (t:Topic)   REQUIRE t.topic_id  IS UNIQUE;
+CREATE CONSTRAINT journal_key IF NOT EXISTS FOR (j:Journal) REQUIRE j.journal_name IS UNIQUE;
+
+CREATE INDEX paper_year   IF NOT EXISTS FOR (p:Paper)  ON (p.year);
+CREATE INDEX author_name  IF NOT EXISTS FOR (a:Author) ON (a.name);
+
+//Create Author nodes
+:auto LOAD CSV WITH HEADERS FROM 'file:///author_cleaned.csv' AS row
+CALL {
+  WITH row
+  MERGE (a:Author {author_id: row.author_id})
+    ON CREATE SET
+      a.name = row.author_name,
+      a.url  = row.author_url
+} IN TRANSACTIONS OF 1000 ROWS;
+
+//Create Topic nodes
+:auto LOAD CSV WITH HEADERS FROM 'file:///topic_cleaned.csv' AS row
+CALL {
+  WITH row
+  MERGE (t:Topic {topic_id: row.topic_id})
+    ON CREATE SET
+      t.name = row.topic_name,
+      t.url  = row.topic_url
+} IN TRANSACTIONS OF 1000 ROWS;
+
+//Create Journal nodes
+:auto LOAD CSV WITH HEADERS FROM 'file:///journal_cleaned.csv' AS row
+CALL {
+  WITH row
+  MERGE (j:Journal {journal_name: row.journal_name})
+    ON CREATE SET j.publisher = row.journal_publisher
+} IN TRANSACTIONS OF 1000 ROWS;
+
+//Create Paper nodes
+:auto LOAD CSV WITH HEADERS FROM 'file:///paper_cleaned.csv' AS row
+CALL {
+  WITH row
+  MERGE (p:Paper {paper_id: row.paper_id})
+    ON CREATE SET
+      p.doi            = row.paper_doi,
+      p.title          = row.paper_title,
+      p.year           = CASE WHEN row.paper_year <> '' THEN toInteger(row.paper_year) END,
+      p.citation_count = CASE WHEN row.paper_citation_count <> '' THEN toInteger(row.paper_citation_count) END,
+      p.field          = row.field_of_study,
+      p.volume         = CASE WHEN row.journal_volume <> '' THEN toInteger(row.journal_volume) END,
+      p.journal_date   = row.journal_date,
+      p.url            = row.paper_url
+} IN TRANSACTIONS OF 1000 ROWS;
+
+//Creating Author-Paper
+:auto LOAD CSV WITH HEADERS FROM 'file:///author_paper_cleaned.csv' AS row
+CALL {
+  WITH row
+  MATCH (a:Author {author_id: row.author_id})
+  MATCH (p:Paper  {paper_id:  row.paper_id })
+  MERGE (a)-[:WROTE]->(p)
+} IN TRANSACTIONS OF 2000 ROWS;
+
+//Creating Paper-Topic relationship
+:auto LOAD CSV WITH HEADERS FROM 'file:///paper_topic_cleaned.csv' AS row
+CALL {
+  WITH row
+  MATCH (p:Paper {paper_id: row.paper_id})
+  MATCH (t:Topic {topic_id: row.topic_id})
+  MERGE (p)-[:HAS_TOPIC]->(t)
+} IN TRANSACTIONS OF 2000 ROWS;
+
+//Creating Paper-Journal relationship
+:auto LOAD CSV WITH HEADERS FROM 'file:///paper_journal_cleaned.csv' AS row
+CALL {
+  WITH row
+  MATCH (p:Paper   {paper_id:    row.paper_id})
+  MATCH (j:Journal {journal_name: row.journal_name})
+  MERGE (p)-[:PUBLISHED_IN]->(j)
+} IN TRANSACTIONS OF 2000 ROWS;
+
+//Creating Paper-Paper relationship
+:auto LOAD CSV WITH HEADERS FROM 'file:///paper_reference_cleaned.csv' AS row
+CALL {
+  WITH row
+  MATCH (src:Paper {paper_id: row.paper_id})
+  MATCH (dst:Paper {paper_id: row.referenced_paper_id})
+  MERGE (src)-[:CITES]->(dst)
+} IN TRANSACTIONS OF 3000 ROWS;
