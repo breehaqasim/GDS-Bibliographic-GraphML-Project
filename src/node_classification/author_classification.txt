@@ -1,0 +1,146 @@
+// Creating a CO_AUTHOR_WITH relationship 
+:auto
+MATCH (a1:Author)-[:WROTE]->(p:Paper)<-[:WROTE]-(a2:Author)
+WHERE id(a1) < id(a2)
+WITH a1, a2  
+
+CALL {
+  WITH a1, a2                         
+  MERGE (a1)-[:CO_AUTHOR_WITH]->(a2)
+} IN TRANSACTIONS OF 1000 ROWS;   
+
+// Projecting GDS graph
+CALL gds.graph.project(
+  'authorCoAuthor',
+  ['Author'],
+  { CO_AUTHOR_WITH: { orientation: 'UNDIRECTED' } }
+);
+
+CALL gds.louvain.write(
+  'authorCoAuthor',
+  { writeProperty: 'communityId' }
+) 
+
+// Computing the dominant topic for each author
+MATCH (a:Author)
+CALL {
+  WITH a
+  MATCH (a)-[:WROTE]->(:Paper)-[:HAS_TOPIC]->(t:Topic)
+  WITH t.name AS topic, count(*) AS freq
+  ORDER BY freq DESC
+  LIMIT 1
+  RETURN topic AS topTopic
+}
+SET a.author_domain = topTopic;
+
+// Since author_domain was string and GDS doesn't support string we created domain_id or an index which is mapped to each author_domain
+MATCH (a:Author)
+WITH collect(DISTINCT a.author_domain) AS domains
+UNWIND range(0, size(domains)-1) AS idx
+WITH domains[idx] AS domain, idx AS domain_id
+MATCH (a:Author {author_domain: domain})
+SET a.domain_id = domain_id;
+
+// Tag authors with domains for training
+MATCH (author:Author)
+WHERE author.domain_id IS NOT NULL
+SET author:TrainAuthor;
+
+// Project **only** TrainAuthor nodes with domain property
+CALL gds.graph.project(
+  'trainGraph',
+  {
+    TrainAuthor: {
+      properties: ['domain_id']
+    }
+  },
+  {
+    CO_AUTHOR_WITH: {
+      type:        'CO_AUTHOR_WITH',
+      orientation: 'UNDIRECTED'
+    }
+  }
+);
+
+// Creating pipeline
+CALL gds.beta.pipeline.nodeClassification.create('authorNodeCls');
+
+// Adding node properties
+CALL gds.beta.pipeline.nodeClassification.addNodeProperty(
+  'authorNodeCls','fastRP',
+  {
+    mutateProperty:     'embed',
+    embeddingDimension: 64,
+    randomSeed:         58
+  }
+);
+
+CALL gds.beta.pipeline.nodeClassification.addNodeProperty(
+  'authorNodeCls','louvain',
+  { mutateProperty: 'communityId' }
+);
+
+// Selecting features
+CALL gds.beta.pipeline.nodeClassification.selectFeatures(
+  'authorNodeCls',
+  ['embed','communityId','domain_id']
+);
+
+// Test-train splitting
+CALL gds.beta.pipeline.nodeClassification.configureSplit(
+  'authorNodeCls',
+  {
+    validationFolds: 4,
+    testFraction:    0.25
+  }
+);
+
+// Adding model to pipeline
+CALL gds.beta.pipeline.nodeClassification.addRandomForest(
+  'authorNodeCls',
+  { numberOfDecisionTrees: 25 }
+);
+
+// Training the pipeline
+CALL gds.beta.pipeline.nodeClassification.train(
+  'trainGraph',
+  {
+    pipeline:           'authorNodeCls',
+    modelName:          'authorDomainRF',
+    targetNodeLabels:   ['TrainAuthor'],
+    targetProperty:     'domain_id',
+    randomSeed:         58,
+    threadCount:        4,
+    metrics:            ['F1_WEIGHTED','ACCURACY','OUT_OF_BAG_ERROR']
+  }
+)
+YIELD modelInfo, modelSelectionStats
+RETURN
+  modelInfo.bestParameters                            AS bestParams,
+  modelInfo.metrics.ACCURACY.test                     AS testAccuracy,
+  modelInfo.metrics.F1_WEIGHTED.test                  AS testF1,
+  modelInfo.metrics.OUT_OF_BAG_ERROR.test             AS testOOB,
+  [c IN modelSelectionStats.modelCandidates | c.metrics.ACCURACY.validation.avg] AS validationScores;
+
+// Predicting targetNodeLabels
+CALL gds.beta.pipeline.nodeClassification.predict.stream(
+  'trainGraph',
+  {
+    pipeline:                       'authorNodeCls',
+    modelName:                      'authorDomainRF',
+    targetNodeLabels:              ['TrainAuthor'],
+    includePredictedProbabilities:  true
+  }
+)
+YIELD nodeId, predictedClass, predictedProbabilities
+WITH
+  gds.util.asNode(nodeId)                AS authorNode,
+  predictedClass                         AS predictedDomainId,
+  predictedProbabilities[predictedClass] AS confidence
+RETURN
+  authorNode.author_id      AS authorId,
+  authorNode.domain_id      AS trueDomainId,
+  predictedDomainId,
+  floor(confidence*100)     AS confidencePct
+ORDER BY confidencePct DESC
+LIMIT 20;
