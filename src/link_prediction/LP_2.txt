@@ -1,0 +1,76 @@
+
+CALL gds.graph.drop('predictionGraph', false);
+//projection
+CALL gds.graph.project(
+  'predictionGraph',
+  ['Author'],
+  [
+    {
+      CO_AUTHORED: {
+        orientation: 'UNDIRECTED',
+        properties: ['sharedTopics', 'year']
+      }
+    }
+  ]
+);
+//create pipeline
+CALL gds.beta.pipeline.linkPrediction.create('lp-pipeline-v2');
+//fastRP
+CALL gds.beta.pipeline.linkPrediction.addNodeProperty('lp-pipeline-v2', 'fastRP', {
+  mutateProperty: 'embedding',
+  embeddingDimension: 128,
+  randomSeed: 42
+});
+//degree
+CALL gds.beta.pipeline.linkPrediction.addNodeProperty('lp-pipeline-v2', 'degree', {
+  mutateProperty: 'degree'
+});
+//normalise degree
+CALL gds.beta.pipeline.linkPrediction.addNodeProperty('lp-pipeline-v2', 'alpha.scaleProperties', {
+  nodeProperties: ['degree'],
+  mutateProperty: 'scaledDegree',
+  scaler: 'MinMax'
+});
+//hamdard
+CALL gds.beta.pipeline.linkPrediction.addFeature('lp-pipeline-v2', 'HADAMARD', {
+  nodeProperties: ['embedding']
+});
+//split config
+CALL gds.beta.pipeline.linkPrediction.configureSplit('lp-pipeline-v2', {
+  trainFraction: 0.7,
+  testFraction: 0.2,
+  validationFolds: 3
+});
+//random forest
+CALL gds.beta.pipeline.linkPrediction.addRandomForest('lp-pipeline-v2', {
+  maxDepth: 5,
+  numberOfDecisionTrees: 10,
+  numberOfSamplesRatio: 0.8
+});
+//train
+CALL gds.beta.pipeline.linkPrediction.train('predictionGraph', {
+    pipeline: 'lp-pipeline-v2',
+    modelName: 'lp-pipeline-model-v22',
+    targetRelationshipType: 'CO_AUTHORED', 
+    metrics: ['AUCPR', 'OUT_OF_BAG_ERROR'], 
+    randomSeed: 42
+}) YIELD modelInfo, modelSelectionStats
+RETURN
+    modelInfo.bestParameters AS winningModel,
+    modelInfo.metrics.AUCPR.train.avg AS avgTrainScore,
+    modelInfo.metrics.AUCPR.outerTrain AS outerTrainScore,
+    modelInfo.metrics.AUCPR.test AS testScore,
+    [candidate IN modelSelectionStats.modelCandidates | candidate.metrics.AUCPR.validation.avg] AS validationScores
+//predict
+call gds.beta.pipeline.linkPrediction.predict.stream("predictionGraph",{
+    modelName: "lp-pipeline-model-v22",
+    writeRelationshipType: "PREDICTED_CO_AUTHORS",
+    topN: 10
+}) YIELD node1, node2, probability
+WITH gds.util.asNode(node1) as n1, gds.util.asNode(node2) as n2, probability
+return n1, n2, probability
+
+
+
+
+
