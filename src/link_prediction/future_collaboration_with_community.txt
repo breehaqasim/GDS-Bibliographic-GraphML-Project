@@ -1,0 +1,83 @@
+:auto
+MATCH (u:Author)-[:WROTE]->(:Paper)<-[:WROTE]-(v:Author)
+WHERE id(u) < id(v)
+WITH u,v
+CALL {
+  WITH u,v
+  MERGE (u)-[:CO_AUTHOR_WITH]-(v)
+} IN TRANSACTIONS OF 1_000 ROWS;
+
+CALL gds.graph.project(
+  'collabGraph',
+  ['Author'],
+  { CO_AUTHOR_WITH: { orientation:'UNDIRECTED' } }
+);
+
+CALL gds.louvain.write(
+  'collabGraph',
+  { writeProperty: 'communityId' }
+)
+
+CALL gds.beta.pipeline.linkPrediction.create('collabLP');
+
+CALL gds.beta.pipeline.linkPrediction.addNodeProperty(
+  'collabLP','fastRP',
+  { mutateProperty:'embedding', embeddingDimension:64, randomSeed:58 }
+);
+
+CALL gds.beta.pipeline.linkPrediction.addNodeProperty(
+  'collabLP','louvain',
+  { mutateProperty:'communityId' }
+);
+
+CALL gds.beta.pipeline.linkPrediction.addFeature(
+  'collabLP','hadamard',
+  { nodeProperties:['embedding'] }
+);
+
+CALL gds.beta.pipeline.linkPrediction.configureSplit(
+  'collabLP',
+  { trainFraction:0.7, testFraction:0.2, validationFolds:5,
+    negativeSamplingRatio:1.0 }
+);
+
+CALL gds.beta.pipeline.linkPrediction.addRandomForest(
+  'collabLP',{ numberOfDecisionTrees:25 }
+);
+
+CALL gds.beta.pipeline.linkPrediction.train(
+  'collabGraph',
+  {
+    pipeline:                'collabLP',
+    modelName:               'futureCollabModel',
+    targetRelationshipType:  'CO_AUTHOR_WITH',
+    randomSeed:              58,
+    metrics:                 ['AUCPR','OUT_OF_BAG_ERROR']
+  }
+)
+YIELD modelInfo, modelSelectionStats
+RETURN
+  modelInfo.metrics.AUCPR.test     AS testAUPR,
+  modelInfo.metrics.OUT_OF_BAG_ERROR.test AS testOOB,
+  [c IN modelSelectionStats.modelCandidates | c.metrics.AUCPR.validation.avg] AS validationAUPRs;
+
+CALL gds.beta.pipeline.linkPrediction.predict.stream(
+  'collabGraph',
+  {
+    pipeline:              'collabLP',
+    modelName:             'futureCollabModel',
+    writeRelationshipType: 'PREDICTED_CO_AUTHOR',
+    topN:                  10
+  }
+)
+YIELD node1, node2, probability
+WITH
+  gds.util.asNode(node1) AS author1,
+  gds.util.asNode(node2) AS author2,
+  probability
+RETURN
+  author1.author_id     AS author1_id,
+  author2.author_id     AS author2_id,
+  floor(probability * 100) AS confidencePct
+ORDER BY confidencePct DESC
+LIMIT 20;
