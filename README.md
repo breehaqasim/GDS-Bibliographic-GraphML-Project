@@ -7,11 +7,11 @@ This project explores the application of **graph-based machine learning** techni
 ## 🚀 Project Overview
 
 - **Domain**: Bibliographic Data Analysis
-- **Frameworks Used**: Neo4j, NetworkX
+- **Frameworks Used**: Neo4j, Pandas
 - **Languages**: Python, Cypher
 - **Tasks**:
-  - Node Classification: Classify papers/authors using graph structure
-  - Link Prediction: Predict future collaborations or citations
+  - Node Classification: Predict author domains
+  - Link Prediction: Predict future collaborations 
 
 ---
 
@@ -61,14 +61,12 @@ Predict future **collaborations** or **citation links** between entities using s
 
 ### Node Classification:
 - **Accuracy**
-- **Precision**
-- **Recall**
+- **OOB**
 - **F1-Score**
 
 ### Link Prediction:
 - **AUC-ROC**
-- **Precision@K**
-- **Recall@K**
+- **OOB**
 
 ---
 
