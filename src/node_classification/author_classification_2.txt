@@ -1,3 +1,5 @@
+// MODEL 2 - RANDOM FOREST (WITHOUT COMMUNITY ID)
+
 // Creating a CO_AUTHOR_WITH relationship 
 :auto
 MATCH (a1:Author)-[:WROTE]->(p:Paper)<-[:WROTE]-(a2:Author)
@@ -15,7 +17,6 @@ CALL gds.graph.project(
   ['Author'],
   { CO_AUTHOR_WITH: { orientation: 'UNDIRECTED' } }
 );
-
 
 // Computing the dominant topic for each author
 MATCH (a:Author)

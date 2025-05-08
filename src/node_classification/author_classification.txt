@@ -1,3 +1,5 @@
+// MODEL 2 - RANDOM FOREST (WITH COMMUNITY ID)
+
 // Creating a CO_AUTHOR_WITH relationship 
 :auto
 MATCH (a1:Author)-[:WROTE]->(p:Paper)<-[:WROTE]-(a2:Author)
