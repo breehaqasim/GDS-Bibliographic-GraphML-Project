@@ -1,0 +1,76 @@
+CALL gds.graph.drop('predictionGraph', false);
+
+
+
+
+CALL gds.graph.project(
+  'predictionGraph',
+  ['Author'],
+  {
+    CO_AUTHORED_TRAIN: {
+      orientation: 'UNDIRECTED',
+      properties: ['sharedTopics', 'year']
+    }
+  }
+);
+
+
+
+
+CALL gds.beta.pipeline.linkPrediction.create('lp-pipeline-v4');
+
+
+CALL gds.beta.pipeline.linkPrediction.addNodeProperty('lp-pipeline-v4', 'fastRP', {
+  mutateProperty: 'embedding',
+  embeddingDimension: 128,
+  randomSeed: 42
+});
+
+
+CALL gds.beta.pipeline.linkPrediction.addNodeProperty('lp-pipeline-v4', 'degree', {
+  mutateProperty: 'degree'
+});
+CALL gds.beta.pipeline.linkPrediction.addNodeProperty('lp-pipeline-v4', 'alpha.scaleProperties', {
+  nodeProperties: ['degree'],
+  mutateProperty: 'scaledDegree',
+  scaler: 'MinMax'
+});
+
+
+
+
+
+
+CALL gds.beta.pipeline.linkPrediction.addFeature('lp-pipeline-v4', 'HADAMARD', {
+  nodeProperties: ['embedding']
+});
+
+
+
+
+
+
+CALL gds.beta.pipeline.linkPrediction.addRandomForest('lp-pipeline-v4', {
+  maxDepth: 8,
+  numberOfDecisionTrees: 50,
+  numberOfSamplesRatio: 0.7
+});
+
+
+
+
+
+
+CALL gds.beta.pipeline.linkPrediction.train('predictionGraph', {
+  pipeline: 'lp-pipeline-v4',
+  modelName: 'lp-pipeline-model-v4',
+  targetRelationshipType: 'CO_AUTHORED_TRAIN',
+  metrics: ['AUCPR', 'OUT_OF_BAG_ERROR'],
+  randomSeed: 42
+})YIELD modelInfo, modelSelectionStats
+RETURN
+    modelInfo.bestParameters AS winningModel,
+    modelInfo.metrics.AUCPR.train.avg AS avgTrainScore,
+    modelInfo.metrics.AUCPR.outerTrain AS outerTrainScore,
+    modelInfo.metrics.AUCPR.test AS testScore,
+    [candidate IN modelSelectionStats.modelCandidates | candidate.metrics.AUCPR.validation.avg] AS validationScores
