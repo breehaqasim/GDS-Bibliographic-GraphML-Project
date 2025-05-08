@@ -1,0 +1,120 @@
+// MODEL 3 - RANDOM FOREST (WITH COMMUNITY ID & PAGE RANK)
+
+MATCH (a1:Author)-[:WROTE]->(p:Paper)<-[:WROTE]-(a2:Author)
+WHERE id(a1) < id(a2)
+WITH a1, a2
+CALL {
+  WITH a1, a2
+  MERGE (a1)-[:CO_AUTHOR_WITH]->(a2)
+} IN TRANSACTIONS OF 1_000 ROWS;
+
+CALL gds.graph.project(
+  'authorCoAuthor',
+  ['Author'],
+  { CO_AUTHOR_WITH: { orientation: 'UNDIRECTED' } }
+);
+
+CALL gds.pageRank.write(
+  'authorCoAuthor',
+  {
+    writeProperty:    'pageRank',
+    maxIterations:    50,
+    dampingFactor:    0.85
+  }
+);
+
+CALL gds.louvain.write(
+  'authorCoAuthor',
+  { writeProperty: 'communityId' }
+);
+
+MATCH (a:Author)
+CALL {
+  WITH a
+  MATCH (a)-[:WROTE]->(:Paper)-[:HAS_TOPIC]->(t:Topic)
+  WITH t.name AS topic, count(*) AS freq
+  ORDER BY freq DESC
+  LIMIT 1
+  RETURN topic AS topTopic
+}
+SET a.author_domain = topTopic;
+
+MATCH (a:Author)
+WITH collect(DISTINCT a.author_domain) AS domains
+UNWIND range(0, size(domains)-1) AS idx
+WITH domains[idx] AS domain, idx AS domain_id
+MATCH (a:Author {author_domain: domain})
+SET a.domain_id = domain_id;
+
+MATCH (a:Author)
+WHERE a.domain_id IS NOT NULL
+SET a:TrainAuthor;
+
+CALL gds.graph.project(
+  'trainGraph',
+  {
+    TrainAuthor: { properties: ['domain_id'] }
+  },
+  {
+    CO_AUTHOR_WITH: { type: 'CO_AUTHOR_WITH', orientation: 'UNDIRECTED' }
+  }
+);
+
+CALL gds.beta.pipeline.nodeClassification.create('authorNodeCls');
+
+CALL gds.beta.pipeline.nodeClassification.addNodeProperty(
+  'authorNodeCls','fastRP',
+  {
+    mutateProperty:     'embed',
+    embeddingDimension: 64,
+    randomSeed:         58
+  }
+);
+
+CALL gds.beta.pipeline.nodeClassification.addNodeProperty(
+  'authorNodeCls','louvain',
+  { mutateProperty: 'communityId' }
+);
+
+CALL gds.beta.pipeline.nodeClassification.addNodeProperty(
+  'authorNodeCls','pageRank',
+  { mutateProperty: 'pageRank' }
+);
+
+CALL gds.beta.pipeline.nodeClassification.selectFeatures(
+  'authorNodeCls',
+  ['embed','communityId','pageRank','domain_id']
+);
+
+CALL gds.beta.pipeline.nodeClassification.configureSplit(
+  'authorNodeCls',
+  {
+    validationFolds: 4,
+    testFraction:    0.25
+  }
+);
+
+CALL gds.beta.pipeline.nodeClassification.addRandomForest(
+  'authorNodeCls',
+  { numberOfDecisionTrees: 25 }
+);
+
+CALL gds.beta.pipeline.nodeClassification.train(
+  'trainGraph',
+  {
+    pipeline:           'authorNodeCls',
+    modelName:          'authorDomainRF',
+    targetNodeLabels:   ['TrainAuthor'],
+    targetProperty:     'domain_id',
+    randomSeed:         58,
+    threadCount:        4,
+    metrics:            ['F1_WEIGHTED','ACCURACY','OUT_OF_BAG_ERROR']
+  }
+)
+YIELD modelInfo, modelSelectionStats
+RETURN
+  modelInfo.bestParameters                            AS bestParams,
+  modelInfo.metrics.ACCURACY.test                     AS testAccuracy,
+  modelInfo.metrics.F1_WEIGHTED.test                  AS testF1,
+  modelInfo.metrics.OUT_OF_BAG_ERROR.test             AS testOOB,
+  [c IN modelSelectionStats.modelCandidates | c.metrics.ACCURACY.validation.avg] AS validationScores;
