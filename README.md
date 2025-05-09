@@ -1,6 +1,6 @@
 # GDS-Bibliographic-GraphML-Project
 
-This project explores the application of **graph-based machine learning** techniques on a bibliographic dataset for two main tasks: **Node Classification** and **Link Prediction**. The dataset is extracted from bibliographic records, and the graph is constructed and analyzed using **Neo4j** and **Python-based ML frameworks**.
+This project explores the application of **graph-based machine learning** techniques on a bibliographic dataset for two main tasks: **Node Classification** and **Link Prediction**. The dataset is extracted from bibliographic records, and the graph is constructed and analyzed using **Neo4j** and **ML frameworks**.
 
 ---
 
@@ -44,16 +44,13 @@ GDS-Bibliographic-GraphML-Project/
 
 ### 🔸 Node Classification
 
-Predict the topic or research area of a **Paper** or **Author** using graph structure and related attributes. Example tasks include:
-- Classifying papers into topics based on citation networks.
+Predict the topic or research area of an **Author** using graph structure and related attributes. 
 - Predicting an author's expertise based on their co-authorship network.
 
 ### 🔸 Link Prediction
 
-Predict future **collaborations** or **citation links** between entities using supervised or unsupervised link prediction models. Example use cases:
+Predict future **collaborations** between entities using supervised or unsupervised link prediction models. 
 - Forecasting future co-authorship.
-- Suggesting relevant citations for a given paper.
-- Recommending suitable journals for paper submission.
 
 ---
 
@@ -62,10 +59,10 @@ Predict future **collaborations** or **citation links** between entities using s
 ### Node Classification:
 - **Accuracy**
 - **OOB**
-- **F1-Score**
+- **Weighted F1-Score**
 
 ### Link Prediction:
-- **AUC-ROC**
+- **AUPR/AUCPR**
 - **OOB**
 
 ---
